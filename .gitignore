@@ -36,6 +36,7 @@ checkpoints/
 
 # Data directories
 data/
+!grm/data/
 
 # OS
 .DS_Store
