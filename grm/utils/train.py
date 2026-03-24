@@ -1283,6 +1283,26 @@ class ExperimentTrainer:
             return nn.CrossEntropyLoss()
         return nn.MSELoss()
 
+    def _resolve_scheduler_plan(self, train_loader_len: int) -> Tuple[int, int, int, int]:
+        """Compute optimizer-step, warmup, and cosine schedules from the active run budget."""
+        effective_train_loader_len = train_loader_len
+        if self.config.max_train_batches is not None:
+            effective_train_loader_len = min(train_loader_len, self.config.max_train_batches)
+
+        accumulation = max(1, self.config.gradient_accumulation_factor)
+        steps_per_epoch = max(1, (effective_train_loader_len + accumulation - 1) // accumulation)
+        total_steps = max(1, self.config.num_epochs * steps_per_epoch)
+
+        requested_warmup_steps = max(0, int(self.config.warmup_steps))
+        if total_steps <= 1:
+            effective_warmup_steps = 0
+        else:
+            warmup_cap = max(1, math.ceil(total_steps * 0.1))
+            effective_warmup_steps = min(requested_warmup_steps, warmup_cap)
+
+        cosine_steps = max(1, total_steps - effective_warmup_steps)
+        return steps_per_epoch, total_steps, effective_warmup_steps, cosine_steps
+
     def _legacy_setup_optimizer_and_criterion(self, model, train_loader_len: int):
         """Legacy optimizer construction retained for comparison against earlier runs."""
         self.logger.info("=" * 60)
@@ -1297,40 +1317,41 @@ class ExperimentTrainer:
 
         criterion = self._create_criterion()
 
-        effective_train_loader_len = train_loader_len
-        if self.config.max_train_batches is not None:
-            effective_train_loader_len = min(train_loader_len, self.config.max_train_batches)
-
-        steps_per_epoch = max(
-            1,
-            (effective_train_loader_len + max(1, self.config.gradient_accumulation_factor) - 1)
-            // max(1, self.config.gradient_accumulation_factor)
-        )
-        total_steps = max(1, self.config.num_epochs * steps_per_epoch)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=total_steps,
-            eta_min=self.config.min_lr
-        )
-
-        warmup_scheduler = optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=1e-6,
-            end_factor=1.0,
-            total_iters=self.config.warmup_steps
-        )
-
-        scheduler = optim.lr_scheduler.SequentialLR(
-            optimizer,
-            schedulers=[warmup_scheduler, scheduler],
-            milestones=[self.config.warmup_steps]
-        )
+        steps_per_epoch, total_steps, effective_warmup_steps, cosine_steps = self._resolve_scheduler_plan(train_loader_len)
+        if effective_warmup_steps > 0:
+            cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=cosine_steps,
+                eta_min=self.config.min_lr,
+            )
+            warmup_scheduler = optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1e-6,
+                end_factor=1.0,
+                total_iters=effective_warmup_steps,
+            )
+            scheduler = optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup_scheduler, cosine_scheduler],
+                milestones=[effective_warmup_steps],
+            )
+        else:
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=cosine_steps,
+                eta_min=self.config.min_lr,
+            )
 
         self.logger.info(f"Optimizer: AdamW (lr={self.config.learning_rate}, wd={self.config.weight_decay})")
         self.logger.info(f"Criterion: {criterion.__class__.__name__}")
+        if effective_warmup_steps != self.config.warmup_steps:
+            self.logger.warning(
+                f"Adjusted warmup_steps from {self.config.warmup_steps} to {effective_warmup_steps} "
+                f"for this run budget (total optimizer steps={total_steps})."
+            )
         self.logger.info(
-            f"Scheduler: SequentialLR(LinearLR warmup={self.config.warmup_steps}, "
-            f"CosineAnnealingLR T_max={total_steps})"
+            f"Scheduler: {'SequentialLR' if effective_warmup_steps > 0 else 'CosineAnnealingLR'}"
+            f"(warmup={effective_warmup_steps}, cosine_steps={cosine_steps}, total_steps={total_steps})"
         )
 
         return optimizer, criterion, scheduler
@@ -1349,38 +1370,41 @@ class ExperimentTrainer:
 
         criterion = self._create_criterion()
 
-        effective_train_loader_len = train_loader_len
-        if self.config.max_train_batches is not None:
-            effective_train_loader_len = min(train_loader_len, self.config.max_train_batches)
-
-        steps_per_epoch = max(
-            1,
-            (effective_train_loader_len + max(1, self.config.gradient_accumulation_factor) - 1)
-            // max(1, self.config.gradient_accumulation_factor)
-        )
-        total_steps = max(1, self.config.num_epochs * steps_per_epoch)
-        scheduler = optim.lr_scheduler.CosineAnnealingLR(
-            optimizer,
-            T_max=total_steps,
-            eta_min=self.config.min_lr,
-        )
-        warmup_scheduler = optim.lr_scheduler.LinearLR(
-            optimizer,
-            start_factor=1e-6,
-            end_factor=1.0,
-            total_iters=self.config.warmup_steps,
-        )
-        scheduler = optim.lr_scheduler.SequentialLR(
-            optimizer,
-            schedulers=[warmup_scheduler, scheduler],
-            milestones=[self.config.warmup_steps],
-        )
+        steps_per_epoch, total_steps, effective_warmup_steps, cosine_steps = self._resolve_scheduler_plan(train_loader_len)
+        if effective_warmup_steps > 0:
+            cosine_scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=cosine_steps,
+                eta_min=self.config.min_lr,
+            )
+            warmup_scheduler = optim.lr_scheduler.LinearLR(
+                optimizer,
+                start_factor=1e-6,
+                end_factor=1.0,
+                total_iters=effective_warmup_steps,
+            )
+            scheduler = optim.lr_scheduler.SequentialLR(
+                optimizer,
+                schedulers=[warmup_scheduler, cosine_scheduler],
+                milestones=[effective_warmup_steps],
+            )
+        else:
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(
+                optimizer,
+                T_max=cosine_steps,
+                eta_min=self.config.min_lr,
+            )
 
         self.logger.info(f"Optimizer: AdamW (lr={self.config.learning_rate}, wd={self.config.weight_decay})")
         self.logger.info(f"Criterion: {criterion.__class__.__name__}")
+        if effective_warmup_steps != self.config.warmup_steps:
+            self.logger.warning(
+                f"Adjusted warmup_steps from {self.config.warmup_steps} to {effective_warmup_steps} "
+                f"for this run budget (total optimizer steps={total_steps})."
+            )
         self.logger.info(
-            f"Scheduler: SequentialLR(LinearLR warmup={self.config.warmup_steps}, "
-            f"CosineAnnealingLR T_max={total_steps})"
+            f"Scheduler: {'SequentialLR' if effective_warmup_steps > 0 else 'CosineAnnealingLR'}"
+            f"(warmup={effective_warmup_steps}, cosine_steps={cosine_steps}, total_steps={total_steps})"
         )
 
         return optimizer, criterion, scheduler
