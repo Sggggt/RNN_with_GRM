@@ -121,19 +121,92 @@ python3 grm/utils/train.py \
   --epochs 10
 ```
 
-Useful CLI arguments:
+## Complete CLI Reference
 
-- `--segment_length`
-- `--memory_capacity_segments`
-- `--retrieval_top_k`
-- `--memory_key_dim`
-- `--sequence_length`
-- `--synthetic_sequence_length`
-- `--recomputation_ratio`
-- `--enable_activation_checkpointing`
-- `--experiment_name`
-- `--resume`
-- `--eval_only`
+The training and evaluation entry point is [`grm/utils/train.py`](./grm/utils/train.py). The tables below document every user-facing CLI parameter exposed by the current parser.
+
+### Run Selection
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `--dataset` | required | Dataset to train or evaluate. Choices: `adding_problem`, `copying_memory`, `sequential_mnist`, `timeseries`, `wikitext`. |
+| `--preset` | `auto` | Hardware-aware or benchmark-aligned preset loaded from [`hardware_presets.json`](./hardware_presets.json). |
+| `--experiment_name`, `--run_name` | dataset name | Identifier used to build checkpoint and log subdirectories. |
+| `--precision_stage`, `--phase` | `stage1` | Starting optimization stage. Accepted values are `stage1`, `stage2`, plus legacy aliases `phase1`, `phase2`. |
+
+### Architecture And Memory Overrides
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `--hidden_size` | preset value | Override the model hidden dimension. |
+| `--memory_key_dim` | preset value or auto-derived | Override the key dimension used by the linear memory cell. |
+| `--num_layers` | preset value | Override the number of stacked segment-memory layers. |
+| `--segment_length` | preset value | Number of sequence steps processed in one segment before archival and retrieval. |
+| `--memory_capacity_segments` | preset value | Maximum number of archived segments retained in the external memory bank. |
+| `--retrieval_top_k` | preset value | Number of archived segments retrieved for each routing query. |
+| `--batch_size` | preset value | Micro-batch size loaded by the DataLoader before gradient accumulation. |
+| `--sequence_length` | preset value | Text context length for `wikitext`, measured in tokens. |
+| `--synthetic_sequence_length` | preset value or derived from segment length | Sequence length used by synthetic benchmarks such as adding problem or copying memory. |
+
+### Optimization, Reproducibility, And Bounded Runs
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `--epochs` | `10` | Number of training epochs. |
+| `--lr` | `4e-4` | Peak learning rate passed to AdamW. |
+| `--weight_decay` | `0.1` | Weight decay used by AdamW parameter groups. |
+| `--gradient_clip_norm` | `1.0` | Global gradient clipping norm applied before optimizer steps. |
+| `--recomputation_ratio` | preset value | Fraction of retrieved routes recomputed from checkpoints instead of directly reusing archived memories. |
+| `--seed` | `42` | Global random seed used for Python, NumPy, PyTorch, and DataLoader worker seeding. |
+| `--deterministic` | disabled | Enable deterministic PyTorch behavior where available. |
+| `--max_train_batches` | unlimited | Cap the number of training batches per epoch for smoke tests or controlled probes. |
+| `--max_val_batches` | unlimited | Cap the number of validation batches per epoch. |
+
+### CUDA And Memory Controls
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `--enable_activation_checkpointing` | disabled unless enabled by preset or guard | Trade extra compute for lower activation memory usage during training. |
+| `--cuda_cpp_debug_fallback` | `False` | Keep the CUDA entry points active but force the numerical path through the PyTorch reference implementation for debugging. |
+| `--disable_memory_guard` | `False` | Disable the trainer's automatic CUDA memory safety logic. |
+| `--cuda_memory_fraction` | `0.92` | Maximum fraction of total device memory the process is allowed to reserve. |
+
+### Precision Curriculum
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `--enable_precision_curriculum`, `--auto_transition` | disabled | Automatically transition from `stage1` to `stage2` after validation loss stabilizes. |
+| `--stage1_min_epochs`, `--phase1_min_epochs` | `3` | Minimum number of epochs to remain in stage 1 before transition is considered. |
+| `--stage1_stability_window`, `--phase1_stable_epochs` | `2` | Number of recent validation intervals used to judge stage-1 stability. |
+| `--stage1_relative_improvement_threshold`, `--phase1_improvement_threshold` | `0.01` | Maximum relative validation-loss change allowed before stage 1 is considered stable enough to transition. |
+
+### Reserved Logarithmic-Hierarchy Flags
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `--enable_logarithmic_segmentation`, `--log_segment` | disabled | Reserved flag for an unsupported logarithmic segmentation variant. The current training entry point rejects this mode. |
+| `--maximum_hierarchy_level`, `--max_level` | `10` | Reserved maximum hierarchy depth for the unsupported logarithmic variant. |
+| `--segments_per_hierarchy_level`, `--segments_per_level` | `256` | Reserved per-level segment budget for the unsupported logarithmic variant. |
+| `--base_segment_length`, `--base_segment_size` | `1` | Reserved base segment length for the unsupported logarithmic variant. |
+| `--enable_adaptive_hierarchy_level`, `--enable_adaptive_level` | enabled | Reserved toggle for adaptive hierarchy-level selection in the unsupported logarithmic variant. |
+
+### Evaluation And Artifact Paths
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `--resume` | none | Path to a checkpoint used for resume or evaluation-only mode. |
+| `--eval_only` | disabled | Skip training and run validation or proxy evaluation from the checkpoint specified by `--resume`. |
+| `--run_proxy_benchmarks`, `--run_paper_eval` | disabled | Run the repository's proxy benchmark suite after validation. |
+| `--benchmark_data_root`, `--paper_eval_data_root` | `./data` | Root directory containing proxy benchmark data such as PIQA or HellaSwag files. |
+| `--checkpoint_root` | `./checkpoints` | Root directory under which per-experiment checkpoints are written. |
+| `--log_root` | `./logs` | Root directory under which per-experiment training logs are written. |
+
+### Practical Notes
+
+- `--eval_only` requires `--resume <checkpoint_path>`.
+- `--enable_precision_curriculum` affects training only when the run starts in `stage1`.
+- `effective_batch_size` reported in logs refers to the loader micro-batch; the true update batch is `batch_size * gradient_accumulation_factor`.
+- The active architecture supports only the linear-memory backend, even though several presets retain paper-inspired naming.
 
 ## Evaluation
 
