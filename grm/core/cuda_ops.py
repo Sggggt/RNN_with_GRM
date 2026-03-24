@@ -268,14 +268,20 @@ def _fallback_batched_memory_gather(memories_per_batch: Tensor, topk_indices: Te
     if topk_indices.ndim not in {2, 3}:
         raise ValueError(f"Expected topk_indices rank 2 or 3, got {topk_indices.ndim}")
 
-    selected_batches = []
+    output_shape = (
+        memories_per_batch.size(0),
+        *topk_indices.shape[1:],
+        *memories_per_batch.shape[2:],
+    )
+    selected = memories_per_batch.new_empty(output_shape)
+
     for batch_idx in range(memories_per_batch.size(0)):
         memory_batch = memories_per_batch[batch_idx]
         indices = topk_indices[batch_idx].reshape(-1)
         gathered = memory_batch.index_select(0, indices)
-        out_shape = tuple(topk_indices[batch_idx].shape) + tuple(memory_batch.shape[1:])
-        selected_batches.append(gathered.reshape(out_shape))
-    return torch.stack(selected_batches, dim=0).contiguous()
+        selected[batch_idx].copy_(gathered.reshape(selected[batch_idx].shape))
+
+    return selected.contiguous()
 
 
 class ChunkUpdateCudaFn(torch.autograd.Function):

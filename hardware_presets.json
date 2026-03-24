@@ -54,18 +54,18 @@
           "gradient_accumulation_factor": 4
         },
         "laptop_2k": {
-          "description": "Balanced local preset for 2K contexts on 8 GB mobile GPUs.",
+          "description": "Stable 2K preset for 8 GB mobile GPUs.",
           "hidden_size": 384,
           "segment_length": 64,
           "memory_capacity_segments": 64,
           "retrieval_top_k": 4,
-          "batch_size": 12,
+          "batch_size": 4,
           "sequence_length": "2K",
-          "vram_estimate": "5.5GB",
+          "vram_estimate": "6-7GB",
           "recomputation_ratio": 0.015,
-          "enable_activation_checkpointing": false,
+          "enable_activation_checkpointing": true,
           "memory_storage_dtype": "float16",
-          "gradient_accumulation_factor": 2
+          "gradient_accumulation_factor": 6
         },
         "laptop_4k": {
           "description": "Conservative long-context preset for 4K contexts on laptop-class GPUs.",

@@ -19,9 +19,9 @@ This repository is now organized around academic terminology:
 
 ## Requirements
 
+- All in Linux or WSL2 environment
 - Python 3.12
 - PyTorch with CUDA support for native-kernel training
-- A Linux or WSL2 environment for training
 - A C++ compiler and CUDA toolkit if you want to rebuild `grm_cuda_ext`
 
 Recommended Linux packages:

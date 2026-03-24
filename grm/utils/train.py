@@ -41,7 +41,11 @@ import numpy as np
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from grm.core import SegmentRecurrentMemoryModel, HierarchicalSegmentMemoryModel
+from grm.core import (
+    SegmentRecurrentMemoryModel,
+    HierarchicalSegmentMemoryModel,
+    get_grm_cuda_runtime_status,
+)
 from grm.data import (
     AddingProblemDataset,
     CopyingMemoryDataset,
@@ -332,6 +336,13 @@ class ExperimentTrainer:
         else:
             self.logger = logger
 
+        self.cuda_runtime_status = (
+            get_grm_cuda_runtime_status()
+            if self.device.type == "cuda"
+            else {}
+        )
+        self._apply_wikitext_cuda_memory_guard()
+
         if self.runtime_env_status.get("is_wsl") and self.runtime_env_status.get("project_on_windows_mount"):
             dataset_hint = (
                 "especially for wikitext"
@@ -364,6 +375,74 @@ class ExperimentTrainer:
         }
         self.token_vocabulary: Optional[Dict[str, int]] = None
         self.copy_target_length: Optional[int] = None
+
+    def _estimate_wikitext_safe_micro_batch(self) -> int:
+        """Return a conservative micro-batch cap for CUDA WikiText language modeling."""
+        sequence_length = max(1, int(self.config.sequence_length))
+        if sequence_length >= 8192:
+            base_cap = 1
+        elif sequence_length >= 4096:
+            base_cap = 2
+        elif sequence_length >= 2048:
+            base_cap = 4
+        else:
+            base_cap = 8
+
+        hidden_penalty = max(1.0, self.config.hidden_size / 384.0)
+        retrieval_penalty = max(1.0, self.config.retrieval_top_k / 4.0)
+        layer_penalty = max(1.0, float(self.config.num_layers))
+        penalty = hidden_penalty * retrieval_penalty * math.sqrt(layer_penalty)
+        adjusted_cap = max(1, int(base_cap / penalty))
+        return adjusted_cap
+
+    def _apply_wikitext_cuda_memory_guard(self) -> None:
+        """Downshift CUDA WikiText runs before DataLoader construction to avoid OOM."""
+        if self.device.type != "cuda":
+            return
+        if self.config.dataset != "wikitext":
+            return
+
+        runtime_status = self.cuda_runtime_status or {}
+        kernel_policy = runtime_status.get("kernel_policy", {})
+        forced_fallback = (
+            self.config.cuda_cpp_debug_fallback
+            or kernel_policy.get("global") == "fallback"
+            or kernel_policy.get("batched_memory_gather") == "fallback"
+        )
+        using_native_backend = runtime_status.get("cuda_backend_available", False) and not forced_fallback
+        runtime_label = "native CUDA kernels" if using_native_backend else "PyTorch fallback kernels"
+        load_error = runtime_status.get("load_error") or "native extension unavailable"
+        safe_batch_cap = self._estimate_wikitext_safe_micro_batch()
+        original_batch_size = max(1, int(self.config.batch_size))
+        original_accumulation = max(1, int(self.config.gradient_accumulation_factor))
+
+        if not self.config.enable_activation_checkpointing:
+            self.config.enable_activation_checkpointing = True
+            self.logger.warning(
+                "Enabled activation checkpointing to stabilize CUDA memory usage "
+                f"for this WikiText run ({runtime_label}; detail: {load_error})."
+            )
+
+        if original_batch_size <= safe_batch_cap:
+            return
+
+        preserved_samples_per_update = original_batch_size * original_accumulation
+        new_batch_size = safe_batch_cap
+        new_accumulation = max(
+            original_accumulation,
+            math.ceil(preserved_samples_per_update / new_batch_size),
+        )
+
+        self.config.batch_size = new_batch_size
+        self.config.gradient_accumulation_factor = new_accumulation
+        self.config.effective_batch_size = new_batch_size
+
+        self.logger.warning(
+            "Reduced the WikiText micro-batch to fit the active CUDA memory budget: "
+            f"batch_size {original_batch_size} -> {new_batch_size}, "
+            f"gradient_accumulation_factor {original_accumulation} -> {new_accumulation} "
+            f"({runtime_label})."
+        )
 
     def _create_progress_bar(self, total: int, desc: str):
         if tqdm is None or total <= 0:
@@ -1112,25 +1191,70 @@ class ExperimentTrainer:
         targets: Tensor,
         ignore_index: int = 0,
     ) -> Tuple[Tensor, float, int]:
-        if self.config.batch_first:
-            flat_logits = outputs.reshape(-1, outputs.size(-1))
-        else:
-            flat_logits = outputs.transpose(0, 1).reshape(-1, outputs.size(-1))
-        flat_targets = targets.reshape(-1)
-        valid_mask = flat_targets.ne(ignore_index)
-        total_tokens = int(valid_mask.sum().item())
-        if total_tokens == 0:
-            zero = flat_logits.new_tensor(0.0)
-            return zero, 0.0, 0
-
-        nll = F.cross_entropy(
-            flat_logits,
-            flat_targets,
+        loss, total_nll, total_tokens = self._compute_wikitext_chunked_loss(
+            outputs,
+            targets,
             ignore_index=ignore_index,
-            reduction="sum",
         )
-        loss = nll / total_tokens
-        return loss, float(nll.item()), total_tokens
+        return loss, float(total_nll.item()), total_tokens
+
+    def _get_wikitext_loss_chunk_length(self, outputs: Tensor) -> int:
+        """Choose a conservative sequence chunk length for language-model loss evaluation."""
+        if outputs.ndim != 3:
+            return 1
+
+        sequence_dim = 1 if self.config.batch_first else 0
+        sequence_length = int(outputs.size(sequence_dim))
+        if self.device.type != "cuda":
+            return sequence_length
+
+        batch_dim = 0 if self.config.batch_first else 1
+        micro_batch = max(1, int(outputs.size(batch_dim)))
+        target_tokens_per_chunk = 256
+        chunk_length = max(32, target_tokens_per_chunk // micro_batch)
+        return min(sequence_length, chunk_length)
+
+    def _compute_wikitext_chunked_loss(
+        self,
+        outputs: Tensor,
+        targets: Tensor,
+        ignore_index: int = 0,
+    ) -> Tuple[Tensor, Tensor, int]:
+        """Compute token-normalized NLL in sequence chunks to reduce peak CE workspace."""
+        if outputs.ndim != 3:
+            raise ValueError(f"Expected rank-3 logits for WikiText, got {outputs.ndim}")
+
+        if not self.config.batch_first:
+            outputs = outputs.transpose(0, 1)
+
+        sequence_length = int(outputs.size(1))
+        vocab_size = int(outputs.size(-1))
+        chunk_length = self._get_wikitext_loss_chunk_length(outputs)
+        total_nll = outputs.new_zeros(())
+        total_tokens = 0
+
+        for start in range(0, sequence_length, chunk_length):
+            end = min(sequence_length, start + chunk_length)
+            logits_chunk = outputs[:, start:end, :]
+            targets_chunk = targets[:, start:end]
+            valid_tokens = int(targets_chunk.ne(ignore_index).sum().item())
+            if valid_tokens == 0:
+                continue
+
+            chunk_nll = F.cross_entropy(
+                logits_chunk.transpose(1, 2),
+                targets_chunk,
+                ignore_index=ignore_index,
+                reduction="sum",
+            )
+            total_nll = total_nll + chunk_nll
+            total_tokens += valid_tokens
+
+        if total_tokens == 0:
+            zero = outputs.new_zeros(())
+            return zero, zero, 0
+
+        return total_nll / total_tokens, total_nll, total_tokens
 
     def _log_runtime_optimization_status(self, model: nn.Module, prefix: str = "") -> None:
         """Emit a compact summary of the active CUDA/C++ execution path."""
@@ -1283,10 +1407,13 @@ class ExperimentTrainer:
         is_copying = self.config.dataset == "copying_memory"
 
         if is_wikitext:
-            if self.config.batch_first:
-                return criterion(outputs.reshape(-1, outputs.size(-1)), targets.reshape(-1))
-            else:
-                return criterion(outputs.transpose(0, 1).reshape(-1, outputs.size(-1)), targets.reshape(-1))
+            ignore_index = getattr(criterion, "ignore_index", 0)
+            loss, _, _ = self._compute_wikitext_chunked_loss(
+                outputs,
+                targets,
+                ignore_index=ignore_index,
+            )
+            return loss
 
         elif is_copying:
             return self._compute_copying_memory_loss(outputs, targets, criterion)
