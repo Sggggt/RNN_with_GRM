@@ -1,0 +1,298 @@
+{
+  "description": "Hardware-aware presets for the active segment-memory training stack.",
+  "version": "3.1",
+  "changelog": [
+    "v3.1: renamed preset keys to the academic terminology used by the current codebase.",
+    "v3.0: introduced balanced recomputation ratios instead of full recomputation.",
+    "v2.0: added memory-optimization controls for low-VRAM execution."
+  ],
+  "memory_optimization": {
+    "description": "Recommended defaults for memory pressure and numerical storage.",
+    "recomputation_ratio": {
+      "description": "Fraction of retrieved routes re-evaluated from checkpoints instead of using archived matrices.",
+      "recommended": 0.02,
+      "low_vram": 0.0,
+      "balanced": 0.02,
+      "high_quality": 0.05
+    },
+    "enable_activation_checkpointing": {
+      "description": "Toggle activation checkpointing for long-context training.",
+      "recommended": false,
+      "low_vram": true
+    },
+    "memory_storage_dtype": {
+      "description": "Numerical precision used to archive segment memories.",
+      "recommended": "float16",
+      "alternatives": ["bfloat16", "float32"]
+    }
+  },
+  "hardware_profiles": {
+    "laptop": {
+      "name": "Laptop (6-8 GB VRAM)",
+      "gpu_examples": [
+        "RTX 4060 Laptop 8GB",
+        "RTX 4050 Laptop 6GB",
+        "RTX 3050 Ti Laptop 8GB",
+        "RTX 3060 Laptop 6GB",
+        "GTX 1660 Ti 6GB",
+        "RTX 2050 6GB",
+        "RTX 2060 6GB"
+      ],
+      "presets": {
+        "laptop_1k": {
+          "description": "Ultra-conservative preset for 1K contexts on limited mobile GPUs.",
+          "hidden_size": 256,
+          "segment_length": 32,
+          "memory_capacity_segments": 32,
+          "retrieval_top_k": 4,
+          "batch_size": 8,
+          "sequence_length": "1K",
+          "vram_estimate": "4GB",
+          "recomputation_ratio": 0.01,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 4
+        },
+        "laptop_2k": {
+          "description": "Balanced local preset for 2K contexts on 8 GB mobile GPUs.",
+          "hidden_size": 384,
+          "segment_length": 64,
+          "memory_capacity_segments": 64,
+          "retrieval_top_k": 4,
+          "batch_size": 12,
+          "sequence_length": "2K",
+          "vram_estimate": "5.5GB",
+          "recomputation_ratio": 0.015,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 2
+        },
+        "laptop_4k": {
+          "description": "Conservative long-context preset for 4K contexts on laptop-class GPUs.",
+          "hidden_size": 256,
+          "segment_length": 128,
+          "memory_capacity_segments": 32,
+          "retrieval_top_k": 4,
+          "batch_size": 4,
+          "sequence_length": "4K",
+          "vram_estimate": "6GB",
+          "recomputation_ratio": 0.02,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 4
+        }
+      }
+    },
+    "desktop": {
+      "name": "Desktop (8-12 GB VRAM)",
+      "gpu_examples": [
+        "RTX 4060 Ti 8GB",
+        "RTX 3070 8GB",
+        "RTX 3070 Ti 8GB",
+        "RTX 3060 Ti 8GB",
+        "RTX 2080 Super 8GB",
+        "RTX 2080 Ti 11GB",
+        "RTX 3060 12GB",
+        "RTX 4070 12GB"
+      ],
+      "presets": {
+        "desktop_2k": {
+          "description": "Standard 2K context preset for mainstream desktop GPUs.",
+          "hidden_size": 512,
+          "segment_length": 64,
+          "memory_capacity_segments": 64,
+          "retrieval_top_k": 8,
+          "batch_size": 16,
+          "sequence_length": "2K",
+          "vram_estimate": "5GB",
+          "recomputation_ratio": 0.02,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 2
+        },
+        "desktop_4k": {
+          "description": "Balanced 4K preset for 8-12 GB desktop GPUs.",
+          "hidden_size": 512,
+          "segment_length": 128,
+          "memory_capacity_segments": 64,
+          "retrieval_top_k": 8,
+          "batch_size": 8,
+          "sequence_length": "4K",
+          "vram_estimate": "6.5GB",
+          "recomputation_ratio": 0.025,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 2
+        },
+        "desktop_8k": {
+          "description": "Conservative 8K preset for modest desktop memory budgets.",
+          "hidden_size": 384,
+          "segment_length": 256,
+          "memory_capacity_segments": 32,
+          "retrieval_top_k": 4,
+          "batch_size": 4,
+          "sequence_length": "8K",
+          "vram_estimate": "7GB",
+          "recomputation_ratio": 0.03,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 4
+        }
+      }
+    },
+    "high_end": {
+      "name": "High-End Desktop (16-24 GB VRAM)",
+      "gpu_examples": [
+        "RTX 4080 16GB",
+        "RTX 4080 Super 16GB",
+        "RTX 4090 24GB",
+        "RTX 3090 24GB",
+        "RTX 3090 Ti 24GB",
+        "A4000 16GB",
+        "A4500 20GB",
+        "A5000 24GB",
+        "RX 7900 XTX 24GB"
+      ],
+      "presets": {
+        "highend_4k": {
+          "description": "High-quality 4K preset for large consumer GPUs.",
+          "hidden_size": 768,
+          "segment_length": 128,
+          "memory_capacity_segments": 128,
+          "retrieval_top_k": 12,
+          "batch_size": 16,
+          "sequence_length": "4K",
+          "vram_estimate": "8GB",
+          "recomputation_ratio": 0.03,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 1
+        },
+        "highend_8k": {
+          "description": "Balanced 8K preset for 16-24 GB GPUs.",
+          "hidden_size": 768,
+          "segment_length": 256,
+          "memory_capacity_segments": 64,
+          "retrieval_top_k": 8,
+          "batch_size": 8,
+          "sequence_length": "8K",
+          "vram_estimate": "10GB",
+          "recomputation_ratio": 0.04,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 2
+        },
+        "highend_16k": {
+          "description": "Conservative 16K preset for high-memory local workstations.",
+          "hidden_size": 512,
+          "segment_length": 512,
+          "memory_capacity_segments": 32,
+          "retrieval_top_k": 8,
+          "batch_size": 4,
+          "sequence_length": "16K",
+          "vram_estimate": "12GB",
+          "recomputation_ratio": 0.05,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 4
+        }
+      }
+    },
+    "server": {
+      "name": "Server or Workstation (40 GB+ VRAM)",
+      "gpu_examples": [
+        "NVIDIA A100 40GB",
+        "NVIDIA A100 80GB",
+        "NVIDIA H100 80GB",
+        "NVIDIA H100 NVL 94GB",
+        "NVIDIA RTX 6000 Ada 48GB",
+        "NVIDIA L40 48GB",
+        "NVIDIA L40S 48GB",
+        "NVIDIA A40 48GB",
+        "NVIDIA A6000 48GB"
+      ],
+      "presets": {
+        "server_16k": {
+          "description": "Server-class 16K preset for large-memory accelerators.",
+          "hidden_size": 1024,
+          "segment_length": 256,
+          "memory_capacity_segments": 128,
+          "retrieval_top_k": 16,
+          "batch_size": 16,
+          "sequence_length": "16K",
+          "vram_estimate": "16GB",
+          "recomputation_ratio": 0.05,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 1
+        },
+        "server_32k": {
+          "description": "Server-class 32K preset for long-context scaling studies.",
+          "hidden_size": 1024,
+          "segment_length": 512,
+          "memory_capacity_segments": 64,
+          "retrieval_top_k": 12,
+          "batch_size": 8,
+          "sequence_length": "32K",
+          "vram_estimate": "20GB",
+          "recomputation_ratio": 0.05,
+          "enable_activation_checkpointing": false,
+          "memory_storage_dtype": "float16",
+          "gradient_accumulation_factor": 2
+        }
+      }
+    }
+  },
+  "reference_baseline": {
+    "description": "Reference training budget reported in the accompanying paper, retained for comparison only.",
+    "paper": "Memory Caching: RNNs with Growing Memory (2026)",
+    "model": {
+      "name": "760M reference model",
+      "block_count": 24,
+      "model_dim": 1536,
+      "attention_heads": 16,
+      "parameter_count": "760M"
+    },
+    "training": {
+      "peak_lr": 0.00125,
+      "lr": 0.0004,
+      "weight_decay": 0.1,
+      "warmup_steps": 1000,
+      "schedule": "cosine",
+      "batch_tokens": "0.5M",
+      "recomputation_ratio": 0.03,
+      "enable_activation_checkpointing": false
+    },
+    "sequences": {
+      "train_lengths": [2048, 4096, 8192, 16384, 32768],
+      "segment_lengths": [16, 32, 64, 128, 256, 512]
+    }
+  },
+  "emergency_presets": {
+    "description": "Fallback presets for extreme memory pressure or smoke testing.",
+    "tiny": {
+      "hidden_size": 128,
+      "segment_length": 16,
+      "memory_capacity_segments": 16,
+      "retrieval_top_k": 2,
+      "batch_size": 2,
+      "recomputation_ratio": 0.0,
+      "enable_activation_checkpointing": false,
+      "memory_storage_dtype": "float16",
+      "gradient_accumulation_factor": 8,
+      "vram_estimate": "2GB"
+    },
+    "nano": {
+      "hidden_size": 64,
+      "segment_length": 16,
+      "memory_capacity_segments": 8,
+      "retrieval_top_k": 2,
+      "batch_size": 1,
+      "recomputation_ratio": 0.0,
+      "enable_activation_checkpointing": false,
+      "memory_storage_dtype": "float16",
+      "gradient_accumulation_factor": 16,
+      "vram_estimate": "1GB"
+    }
+  }
+}

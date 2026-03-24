@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# Plans and Documentation
+Plans/
+*.pdf
+
+# Logs and Checkpoints
+logs/
+*.log
+checkpoints/
+*.pt
+
+# Data directories
+data/
+
+# OS
+.DS_Store
+Thumbs.db
+*.pyc
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+.pytest_cache/
+
+# Profiling
+*.prof
+*.pstats
