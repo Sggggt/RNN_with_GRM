@@ -301,6 +301,12 @@ class ChunkUpdateCudaFn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_hidden: Tensor, grad_memory_out: Tensor):
         keys, values, queries, memory, aux = ctx.saved_tensors
+        # Ensure grad tensors match the dtype of input tensors for mixed precision
+        target_dtype = keys.dtype
+        if grad_hidden.dtype != target_dtype:
+            grad_hidden = grad_hidden.to(target_dtype)
+        if grad_memory_out.dtype != target_dtype:
+            grad_memory_out = grad_memory_out.to(target_dtype)
         with torch.enable_grad():
             grad_k, grad_v, grad_q, grad_memory = torch.ops.grm_cuda.chunk_update_backward(
                 grad_hidden.contiguous(),
@@ -325,6 +331,10 @@ class ApplyQueryCudaFn(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_hidden: Tensor):
         memories, queries = ctx.saved_tensors
+        # Ensure grad tensors match the dtype of input tensors for mixed precision
+        target_dtype = memories.dtype
+        if grad_hidden.dtype != target_dtype:
+            grad_hidden = grad_hidden.to(target_dtype)
         with torch.enable_grad():
             grad_memories, grad_queries = torch.ops.grm_cuda.apply_query_backward(
                 grad_hidden.contiguous(),
