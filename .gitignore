@@ -35,8 +35,6 @@ checkpoints/
 *.pt
 
 # Data directories
-data/
-!grm/data/
 
 # OS
 .DS_Store
@@ -52,3 +50,4 @@ Thumbs.db
 # Profiling
 *.prof
 *.pstats
+Memory_Caching_RNNs_with_Growing_Memory.md
