@@ -2,17 +2,19 @@ version: '3.8'
 
 services:
   grm:
-    build: .
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     image: grm:latest
     runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
     volumes:
       # Mount checkpoints and logs for persistence
-      - ./checkpoints:/app/checkpoints
-      - ./logs:/app/logs
+      - ../checkpoints:/app/checkpoints
+      - ../logs:/app/logs
       # Optional: mount data directory if you have local datasets
-      - ./data:/app/data
+      - ../data:/app/data
     # Default command - override with docker-compose run
     command: >
       python3 grm/utils/train.py

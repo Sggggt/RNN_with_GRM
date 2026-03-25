@@ -62,6 +62,52 @@ The most important fields are:
 - `dispatch_kernels`
 - `kernel_policy`
 
+## Docker
+
+For users who prefer containerized environments, a Docker configuration is provided in the [`docker/`](./docker/) directory.
+
+### Build the Docker Image
+
+```bash
+docker build -f docker/Dockerfile -t grm:latest .
+```
+
+### Run Training with Docker
+
+```bash
+# Basic training run with GPU and volume mounts
+docker run --gpus all \
+  -v $(pwd)/checkpoints:/app/checkpoints \
+  -v $(pwd)/logs:/app/logs \
+  grm:latest \
+  python3 grm/utils/train.py --dataset wikitext --preset laptop_2k --epochs 10
+
+# Interactive shell
+docker run --gpus all -it \
+  -v $(pwd)/checkpoints:/app/checkpoints \
+  -v $(pwd)/logs:/app/logs \
+  --entrypoint /bin/bash \
+  grm:latest
+```
+
+### Using Docker Compose
+
+```bash
+# From the docker/ directory
+cd docker
+docker-compose up
+
+# Or run with custom arguments
+docker-compose run grm \
+  python3 grm/utils/train.py --dataset adding_problem --preset emergency_tiny --epochs 1
+```
+
+The Docker image includes:
+- CUDA 12.1 runtime
+- Python 3.12
+- PyTorch with CUDA support
+- Pre-built GRM CUDA extensions
+
 ## Repository Layout
 
 - [`grm/core`](./grm/core): model architecture, retrieval, fusion, and CUDA entry points
