@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# Git
+.git/
+.gitignore
+
+# Documentation (optional - remove if you want docs in container)
+Plans/
+*.pdf
+
+# Logs and Checkpoints (will be mounted as volumes)
+logs/
+*.log
+checkpoints/
+*.pt
+
+# OS
+.DS_Store
+Thumbs.db

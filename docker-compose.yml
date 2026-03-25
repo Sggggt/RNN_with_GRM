@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  grm:
+    build: .
+    image: grm:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      # Mount checkpoints and logs for persistence
+      - ./checkpoints:/app/checkpoints
+      - ./logs:/app/logs
+      # Optional: mount data directory if you have local datasets
+      - ./data:/app/data
+    # Default command - override with docker-compose run
+    command: >
+      python3 grm/utils/train.py
+        --dataset wikitext
+        --preset laptop_2k
+        --experiment_name wikitext-2
+        --epochs 10
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
