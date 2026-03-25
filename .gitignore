@@ -34,8 +34,6 @@ logs/
 checkpoints/
 *.pt
 
-# Data directories
-
 # OS
 .DS_Store
 Thumbs.db
