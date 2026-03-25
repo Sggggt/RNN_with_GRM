@@ -1,9 +1,9 @@
 # GRM Dockerfile
 # Usage:
-#   docker build -t grm:latest .
+#   docker build -f docker/Dockerfile -t grm:latest .
 #   docker run --gpus all -v $(pwd)/checkpoints:/app/checkpoints -v $(pwd)/logs:/app/logs grm:latest
 
-FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
 
 # Avoid interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip3 install --upgrade pip setuptools wheel
 
 # Install PyTorch with CUDA support
-RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu128
 
 # Install additional dependencies
 RUN pip3 install \
